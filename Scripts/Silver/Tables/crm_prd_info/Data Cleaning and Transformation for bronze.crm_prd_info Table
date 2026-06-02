@@ -1,0 +1,142 @@
+SELECT
+	prd_id,
+	prd_key,
+	prd_nm,
+	prd_cost,
+	prd_line,
+	prd_start_dt,
+	prd_end_dt
+FROM bronze.crm_prd_info;
+
+-- 1) Data Quality Check One:-
+	-- Check if prd_id is unique or not and if it is having any NULL values
+	SELECT prd_id, COUNT(*) FROM bronze.crm_prd_info
+	GROUP BY prd_id
+	HAVING COUNT(*) > 1 OR prd_id IS NULL;
+	-- No duplicates and NULL values in prd_id
+
+-- 2) Data Quality Check Two:-
+	-- Before running DQ check on prd_key, we have to split it into two new columns as prd_key is made by two infos (first 5 characters of prd_key is category id and other characters are having other info
+	-- Making a new column "cat_id" with the 1st five characters of prd_key column. Also there is underscore in the category id column in bronze.erp_px_cat_g1v2 table but in bronze.crm_prd_info we have minus. So we have to replace that also with underscore
+		SELECT
+		prd_id,
+		prd_key,
+		REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+		prd_nm,
+		prd_cost,
+		prd_line,
+		prd_start_dt,
+		prd_end_dt
+		FROM bronze.crm_prd_info;
+
+		-- Find in bronze.erp_px_cat_g1v2 table, if any category id is not available which are present in bronze.crm_prd_info
+		SELECT
+		prd_id,
+		prd_key,
+		REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+		prd_nm,
+		prd_cost,
+		prd_line,
+		prd_start_dt,
+		prd_end_dt
+		FROM bronze.crm_prd_info
+		WHERE REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') NOT IN
+		(SELECT DISTINCT id FROM bronze.erp_px_cat_g1v2); 
+
+		-- Making another new column "prd_key" with the rest of the characters of prd_key column and remove original prd_key column
+		SELECT
+		prd_id,
+		REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+		SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+		prd_nm,
+		prd_cost,
+		prd_line,
+		prd_start_dt,
+		prd_end_dt
+		FROM bronze.crm_prd_info;
+
+		-- Find in bronze.crm_sales_details table, if any prd_key is not available which are present in bronze.crm_prd_info
+		SELECT
+		prd_id,
+		REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+		SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+		prd_nm,
+		prd_cost,
+		prd_line,
+		prd_start_dt,
+		prd_end_dt
+		FROM bronze.crm_prd_info
+		WHERE SUBSTRING(prd_key, 7, LEN(prd_key)) NOT IN
+		(SELECT DISTINCT sls_prd_key FROM bronze.crm_sales_details); 
+
+-- 3) Data Quality Check Three:-
+	-- Check for Unwanted Spaces in prd_nm Column
+	SELECT prd_nm FROM bronze.crm_prd_info
+	WHERE prd_nm != TRIM(prd_nm);
+	-- There is no unwanted spaces in prd_nm Column
+
+-- 4) Data Quality Check Four:-
+	-- Check for NULL and Negative Numbers in prd_cost Column
+	SELECT prd_cost FROM bronze.crm_prd_info
+	WHERE prd_cost < 0 OR prd_cost IS NULL;
+	-- There is no negative values but there are NULL values
+
+	-- Solve this problem of NULL values
+		-- Replace NULL values with zero
+		SELECT
+		prd_id,
+		REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+		SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+		prd_nm,
+		ISNULL(prd_cost, 0) AS prd_cost,
+		prd_line,
+		prd_start_dt,
+		prd_end_dt
+		FROM bronze.crm_prd_info;
+
+-- 5) Data Quality Check Five:-
+	-- Check Data Standarization & Consistency in prd_line Column
+	SELECT DISTINCT prd_line FROM bronze.crm_prd_info;
+
+	--Solve this Standarization & Consistency
+		-- Standarize the data of prd_line column with M as "", R as "", S as "", T as "" and NULL values as "n/a" and remove unwanted spaces
+			SELECT
+			prd_id,
+			REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+			SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+			prd_nm,
+			ISNULL(prd_cost, 0) AS prd_cost,
+			CASE WHEN UPPER(TRIM(prd_line)) = 'M' THEN 'Mountain'
+				WHEN UPPER(TRIM(prd_line)) = 'R' THEN 'Road'
+				WHEN UPPER(TRIM(prd_line)) = 'S' THEN 'Other Sales'
+				WHEN UPPER(TRIM(prd_line)) = 'T' THEN 'Touring'
+				ELSE 'n/a'
+			END AS prd_line,
+			prd_start_dt,
+			prd_end_dt
+			FROM bronze.crm_prd_info;
+
+-- 6) Data Quality Check Six:-
+	-- Check for invalid date orders in columns prd_start_dt and prd_end_dt
+	-- Check if there is any record where prd_end_dt is smaller than prd_start_dt
+	SELECT * FROM bronze.crm_prd_info
+	WHERE prd_end_dt < prd_start_dt;
+	-- It also included the records where prd_start_dt is present but prd_end_dt is NULL, also where prd_start_dt is NULL but prd_end_dt is present.
+	-- There is no issue with those records where prd_start_dt is present but prd_end_dt is NULL
+
+	--Solve this Invalid Date Orders Issue along with cange the datatype of these two columns from DATETIME to DATE
+			SELECT
+			prd_id,
+			REPLACE(SUBSTRING(prd_key, 1, 5), '-', '_') AS cat_id,
+			SUBSTRING(prd_key, 7, LEN(prd_key)) AS prd_key,
+			prd_nm,
+			ISNULL(prd_cost, 0) AS prd_cost,
+			CASE WHEN UPPER(TRIM(prd_line)) = 'M' THEN 'Mountain'
+				WHEN UPPER(TRIM(prd_line)) = 'R' THEN 'Road'
+				WHEN UPPER(TRIM(prd_line)) = 'S' THEN 'Other Sales'
+				WHEN UPPER(TRIM(prd_line)) = 'T' THEN 'Touring'
+				ELSE 'n/a'
+			END AS prd_line,
+			CAST(prd_start_dt AS DATE) AS prd_start_dt,
+			CAST(LEAD(prd_start_dt) OVER (PARTITION BY prd_key ORDER BY prd_start_dt) - 1 AS DATE) AS prd_end_dt
+			FROM bronze.crm_prd_info;
