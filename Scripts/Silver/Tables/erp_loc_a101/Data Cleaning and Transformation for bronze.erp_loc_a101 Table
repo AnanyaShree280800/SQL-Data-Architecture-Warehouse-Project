@@ -1,0 +1,40 @@
+SELECT cid, cntry FROM bronze.erp_loc_a101;
+
+-- 1) Data Quality Check One:-
+	-- Records in "cid" column of bronze.erp_loc_a101 table is similar to records of "cst_key" column of silver.crm_cust_info table. So these two columns will be used to join these two tables.
+	-- But few records of "cid" column of bronze.erp_loc_a101 table has minus "-" sign which is not there in "cst_key" column of silver.crm_cust_info table.
+	-- We need to remove that minus "-" sign prefix from "cid" column of bronze.erp_loc_a101 table to make it ready for joining it to silver.crm_cust_info table in future.
+
+	-- Solve this issue:
+		SELECT
+		REPLACE(cid, '-', '') cid,
+		cntry
+		FROM bronze.erp_loc_a101;
+
+	-- Find in silver.crm_cust_info table, if any cid is not available which are present in bronze.erp_loc_a101
+		SELECT
+		REPLACE(cid, '-', '') cid,
+		cntry
+		FROM bronze.erp_loc_a101
+		WHERE REPLACE(cid, '-', '') NOT IN (SELECT DISTINCT cst_key FROM silver.crm_cust_info);
+		-- There is no issue. There is no etra record in silver.crm_cust_info which is not there in bronze.erp_loc_a101.
+
+-- 2) Data Quality Check Two:-
+	-- Check all distinct values of cntry column to check if there is any DQ issue
+	SELECT DISTINCT cntry FROM bronze.erp_loc_a101 ORDER BY cntry;
+	-- There are multiple issues with cntry column.
+	-- There are NULL values.
+	-- There are empty records.
+	-- There are records with full name of country as well as there are records with country name abriviations.
+	-- There are multiple versions of a single country (example:- USA, US, United States), all are present in records.
+
+	-- Solve this centry column standarization & inconsistency issue:
+	 -- Standarize abrivations with full name like US & USA as "United States" and DE as "Germany" and NULL values as "n/a" and remove unwanted spaces and make empty records as NULL.
+	 SELECT
+		REPLACE(cid, '-', '') cid,
+		CASE WHEN TRIM(cntry) = 'DE' THEN 'Germany'
+			WHEN TRIM(cntry) IN ('US', 'USA') THEN 'United States'
+			WHEN TRIM(cntry) = '' OR cntry IS NULL THEN 'n/a'
+			ELSE TRIM(cntry)
+		END AS cntry
+		FROM bronze.erp_loc_a101;
