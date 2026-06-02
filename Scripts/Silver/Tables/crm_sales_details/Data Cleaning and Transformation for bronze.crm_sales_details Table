@@ -1,0 +1,131 @@
+SELECT
+sls_ord_num,
+sls_prd_key,
+sls_cust_id,
+sls_order_dt,
+sls_ship_dt,
+sls_due_dt,
+sls_sales,
+sls_quantity,
+sls_price
+FROM bronze.crm_sales_details;
+
+-- 1) Data Quality Check One:-
+	-- Check for Unwanted Spaces in sls_ord_num Column
+	SELECT sls_ord_num FROM bronze.crm_sales_details
+	WHERE sls_ord_num != TRIM(sls_ord_num);
+	-- There is no unwanted spaces in sls_ord_num Column
+
+-- 2) Data Quality Check Two:-
+	-- Find in silver.crm_prd_info table, if any sls_prd_key is not available which are present in bronze.crm_sales_details
+	SELECT
+	sls_ord_num,
+	sls_prd_key,
+	sls_cust_id,
+	sls_order_dt,
+	sls_ship_dt,
+	sls_due_dt,
+	sls_sales,
+	sls_quantity,
+	sls_price
+	FROM bronze.crm_sales_details
+	WHERE sls_prd_key NOT IN (SELECT prd_key FROM silver.crm_prd_info);
+	-- There is no issue. Every sls_prd_key present in bronze.crm_sales_details is also present in silver.crm_prd_info
+
+-- 3) Data Quality Check Three:-
+	-- Find in silver.crm_cust_info table, if any sls_cust_id is not available which are present in bronze.crm_sales_details
+	SELECT
+	sls_ord_num,
+	sls_prd_key,
+	sls_cust_id,
+	sls_order_dt,
+	sls_ship_dt,
+	sls_due_dt,
+	sls_sales,
+	sls_quantity,
+	sls_price
+	FROM bronze.crm_sales_details
+	WHERE sls_cust_id NOT IN (SELECT cst_id FROM silver.crm_cust_info);
+	-- There is no issue. Every sls_cust_id present in bronze.crm_sales_details is also present in silver.crm_cust_info
+
+-- 4) Data Quality Check Four:-
+	-- Check for Invalid Dates in sls_order_dt, sls_ship_dt and sls_due_dt Columns
+	SELECT NULLIF(sls_order_dt, 0) sls_order_dt
+	FROM bronze.crm_sales_details
+	WHERE sls_order_dt <=0 OR LEN(sls_order_dt) != 8;
+
+	SELECT NULLIF(sls_ship_dt, 0) sls_ship_dt
+	FROM bronze.crm_sales_details
+	WHERE sls_ship_dt <=0 OR LEN(sls_ship_dt) != 8;
+
+	SELECT NULLIF(sls_due_dt, 0) sls_due_dt
+	FROM bronze.crm_sales_details
+	WHERE sls_due_dt <=0 OR LEN(sls_due_dt) != 8;
+	-- Dates in all 3 columns is in integer datatype. And some values are zero also in sls_order_dt (not in other 2 columns, but we will solve it for all 3 columns to avoid future DQ issues)
+	-- The records in all 3 columns should have 8 characters only (4 for year, 2 for month and rest 2 for date).
+	
+	-- Solve the invalid date issue in sls_order_dt column:
+		-- Values which are zero and not equal to 8 chracters, make those values NULL. Also for rest of the records, convert its datatype to Varchar first and then from VARCHAR to DATE (As we cannot directly convert from Integer to DATE in SQL)
+		SELECT
+		sls_ord_num,
+		sls_prd_key,
+		sls_cust_id,
+		CASE WHEN sls_order_dt = 0 OR LEN(sls_order_dt) != 8 THEN NULL
+			ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE)
+		END AS sls_order_dt,
+		CASE WHEN sls_ship_dt = 0 OR LEN(sls_ship_dt) != 8 THEN NULL
+			ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE)
+		END AS sls_ship_dt,
+		CASE WHEN sls_due_dt = 0 OR LEN(sls_due_dt) != 8 THEN NULL
+			ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE)
+		END AS sls_due_dt,
+		sls_sales,
+		sls_quantity,
+		sls_price
+		FROM bronze.crm_sales_details;
+
+-- 5) Data Quality Check Five:-
+	-- Check if sls_order_dt is earlier than sls_ship_dt and sls_due_dt (as it should)
+	SELECT * FROM bronze.crm_sales_details
+	WHERE sls_order_dt > sls_ship_dt OR sls_order_dt > sls_due_dt
+	-- There is no issue. For every record, sls_order_dt is earlier than sls_ship_dt and sls_due_dt
+
+-- 6) Data Quality Check Six:-
+	-- Check if sls_sales=sls_quantity*sls_price and if values of all these three columns is not NULL, zero, or negative
+	SELECT DISTINCT
+	sls_sales,
+	sls_quantity,
+	sls_price
+	FROM bronze.crm_sales_details
+	WHERE sls_sales != sls_quantity * sls_price
+	OR sls_sales IS NULL OR sls_quantity IS NULL OR sls_price IS NULL
+	OR sls_sales <= 0 OR sls_quantity <= 0 OR sls_price <= 0
+	ORDER BY sls_sales, sls_quantity, sls_price;
+
+	-- Solve this DQ issue:
+	-- If sls_sales is NULL, zero, or negative, derive it using sls_quantity and sls_price
+	-- If sls_price is NULL or zero, calculate it using sls_sales and sls_quantity (before calculation, if sls_quantity is having any record with value zero, then convert it in NULL)
+	-- If sls_price is negative, convert it into positive value
+		SELECT
+			sls_ord_num,
+			sls_prd_key,
+			sls_cust_id,
+			CASE WHEN sls_order_dt = 0 OR LEN(sls_order_dt) != 8 THEN NULL
+				ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE)
+			END AS sls_order_dt,
+			CASE WHEN sls_ship_dt = 0 OR LEN(sls_ship_dt) != 8 THEN NULL
+				ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE)
+			END AS sls_ship_dt,
+			CASE WHEN sls_due_dt = 0 OR LEN(sls_due_dt) != 8 THEN NULL
+				ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE)
+			END AS sls_due_dt,
+			CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales != sls_quantity + ABS(sls_price)
+					THEN sls_quantity * ABS(sls_price)
+				ELSE sls_sales
+			END AS sls_sales,
+			sls_quantity,
+			CASE WHEN sls_price IS NULL OR sls_price <= 0
+					THEN sls_sales / NULLIF(sls_quantity, 0)
+				ELSE sls_price
+			END AS sls_price
+		FROM bronze.crm_sales_details;
