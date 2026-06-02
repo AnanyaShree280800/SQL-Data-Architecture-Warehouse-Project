@@ -1,0 +1,6 @@
+-- REVIEW DATA QUALITY AFTER LOADING THE CLEANED AND TRANSFORMED DATA INTO silver.erp_loc_a101
+-- Check all distinct values of cntry column to check if there is any DQ issue
+	SELECT DISTINCT cntry FROM silver.erp_loc_a101 ORDER BY cntry;
+
+-- Final look at table silver.erp_loc_a101
+	SELECT * FROM silver.erp_loc_a101; 
