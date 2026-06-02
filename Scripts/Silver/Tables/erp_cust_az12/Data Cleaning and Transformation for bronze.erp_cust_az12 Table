@@ -1,0 +1,65 @@
+SELECT cid, bdate, gen FROM bronze.erp_cust_az12;
+
+-- 1) Data Quality Check One:-
+	-- Records in "cid" column of bronze.erp_cust_az12 table is similar to records of "cst_key" column of silver.crm_cust_info table. So these two columns will be used to join these two tables
+	-- But few records of "cid" column of bronze.erp_cust_az12 table has prefix "NAS" which is not there in "cst_key" column of silver.crm_cust_info table.
+	-- We need to remove that "NAS" prefix from "cid" column of bronze.erp_cust_az12 table to make it ready for joining it to silver.crm_cust_info table in future.
+	SELECT
+	CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+		ELSE cid
+	END cid,
+	bdate,
+	gen
+	FROM bronze.erp_cust_az12;
+
+	-- Find in silver.crm_cust_info table, if any cid is not available which are present in bronze.erp_cust_az12
+	SELECT
+	CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+		ELSE cid
+	END AS cid,
+	bdate,
+	gen
+	FROM bronze.erp_cust_az12
+	WHERE CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+		ELSE cid
+	END NOT IN (SELECT DISTINCT cst_key FROM silver.crm_cust_info);
+	-- There is no issue. There is no etra record in silver.crm_cust_info which is not there in bronze.erp_cust_az12.
+
+-- 2) Data Quality Check Two:-
+	-- Identify if there is any out of range date records in bdate column with any out of range date as an example. Also check if any record of bdate column refers to future.
+	SELECT DISTINCT bdate
+	FROM bronze.erp_cust_az12
+	WHERE bdate < '1924-01-01' OR bdate > GETDATE();
+
+	-- Solve this DQ issue
+		-- we will not remove or update those date which are out of range as we have no definite range present. We assume a range.
+		-- We will make those records NULL in bdate column which are in future as birthdates cannot be in future.
+		SELECT
+		CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+			ELSE cid
+		END AS cid,
+		CASE WHEN bdate > GETDATE() THEN NULL
+			ELSE bdate
+		END AS bdate,
+		gen
+		FROM bronze.erp_cust_az12;
+
+-- 3) Data Quality Check Three:-
+	-- Check all distinct values of gen column to check if there is any DQ issue
+	SELECT DISTINCT gen FROM bronze.erp_cust_az12;
+	-- In gen column, there are two values for male:- "Male" & "M". Also two values for female:- "Female" & "F". There are NULL values also.
+
+	-- Solve this gen column inconsistency issue.
+		-- Standarize the data of gen column with F as "Female" and NULL values as "n/a" and remove unwanted spaces.
+		SELECT
+		CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid, 4, LEN(cid))
+			ELSE cid
+		END AS cid,
+		CASE WHEN bdate > GETDATE() THEN NULL
+			ELSE bdate
+		END AS bdate,
+		CASE WHEN UPPER(TRIM(gen)) IN ('F', 'FEMALE') THEN 'Female'
+			WHEN UPPER(TRIM(gen)) IN ('M', 'MALE') THEN 'Male'
+			ELSE 'n/a'
+		END AS gen
+		FROM bronze.erp_cust_az12;
