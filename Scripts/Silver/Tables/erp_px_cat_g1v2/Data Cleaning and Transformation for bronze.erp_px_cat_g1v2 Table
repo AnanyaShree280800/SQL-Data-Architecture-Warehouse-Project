@@ -1,0 +1,28 @@
+SELECT
+id,
+cat,
+subcat,
+maintenance
+FROM bronze.erp_px_cat_g1v2;
+
+-- 1) Data Quality Check One:-
+	-- Check for Unwanted Spaces in cat, subcat and maintenance Columns
+	SELECT cat, subcat, maintenance FROM bronze.erp_px_cat_g1v2
+	WHERE cat != TRIM(cat) OR subcat != TRIM(subcat) OR maintenance != TRIM(maintenance);
+	-- There is no unwanted spaces in cat, subcat and maintenance columns.
+
+-- 2) Data Quality Check Two:-
+	-- Check all distinct values of cat column to check if there is any DQ issue
+	SELECT DISTINCT cat FROM bronze.erp_px_cat_g1v2 ORDER BY cat;
+	-- There is no data standariation and consistency issue in cat column.
+
+	-- Check all distinct values of subcat column to check if there is any DQ issue
+	SELECT DISTINCT subcat FROM bronze.erp_px_cat_g1v2 ORDER BY subcat;
+	-- There is no data standariation and consistency issue in subcat column.
+
+	-- Check all distinct values of maintenance column to check if there is any DQ issue
+	SELECT DISTINCT maintenance FROM bronze.erp_px_cat_g1v2 ORDER BY maintenance;
+	-- There is no data standariation and consistency issue in maintenance column.
+
+-- So this table has no DQ issue. Hence there is nothing to cleanup.
+	
